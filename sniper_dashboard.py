@@ -807,6 +807,8 @@ def search_worker(length):
 
             if code == 0:
                 events.put(("result", "VALID", username))
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
 
             elif code == 1:
                 events.put(("result", "TAKEN", username))
@@ -822,6 +824,7 @@ def search_worker(length):
 
         except ValueError:
             events.put(("error", None))
+
 
         # Intervalo entre verificações
         stop_event.wait(2.0)
