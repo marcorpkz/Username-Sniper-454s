@@ -1,4 +1,4 @@
-
+import sys
 import customtkinter as ctk
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageFilter, ImageTk
@@ -24,7 +24,10 @@ MUTED = "#92929F"
 GREEN = "#36C78C"
 BORDER = "#302027"
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VALID_FILE = os.path.join(BASE_DIR, "validos.txt")
 
 events = queue.Queue()

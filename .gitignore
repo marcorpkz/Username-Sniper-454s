@@ -1,1 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Resultados gerados pelo programa
 validos.txt
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema operacional
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
