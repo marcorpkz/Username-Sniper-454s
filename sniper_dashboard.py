@@ -869,84 +869,82 @@ def generate_username(length):
     )
 
 
-def search_worker(length):
+def search_worker(length, usernames_to_check=None):
 
     session = requests.Session()
+    txt_mode = usernames_to_check is not None
+    username_iterator = iter(usernames_to_check) if txt_mode else None
 
-    while not stop_event.is_set():
+    try:
+        while not stop_event.is_set():
 
-        pause_event.wait()
+            pause_event.wait()
 
-        if stop_event.is_set():
-            break
-
-        if txt_mode:
-            username = next(username_iterator, None)
-            if username is None:
+            if stop_event.is_set():
                 break
-        else:
-            username = generate_username(length)
 
-        events.put(("target", username))
-
-        try:
-
-            response = session.get(
-                "https://auth.roblox.com/v1/usernames/validate",
-                params={
-                    "Username": username,
-                    "Birthday": "2000-01-01"
-                },
-                timeout=15
-            )
-
-            if response.status_code == 429:
-
-                events.put(("rate_limit", None))
-
-                # Respeitar o limite da API
-                for _ in range(30):
-                    if stop_event.is_set():
-                        break
-                    if not pause_event.is_set():
-                        pause_event.wait()
-                    stop_event.wait(1)
-
-                continue
-
-            response.raise_for_status()
-
-            code = response.json().get("code")
-
-            if code == 0:
-                events.put(("result", "VALID", username))
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-
-            elif code == 1:
-                events.put(("result", "TAKEN", username))
-
-            elif code == 2:
-                events.put(("result", "CENSORED", username))
-
+            if txt_mode:
+                username = next(username_iterator, None)
+                if username is None:
+                    break
             else:
+                username = generate_username(length)
+
+            events.put(("target", username))
+
+            try:
+                response = session.get(
+                    "https://auth.roblox.com/v1/usernames/validate",
+                    params={
+                        "Username": username,
+                        "Birthday": "2000-01-01"
+                    },
+                    timeout=(5, 5)
+                )
+
+                if response.status_code == 429:
+                    events.put(("rate_limit", None))
+
+                    # Espera respeitando o limite e permitindo parar/pausar.
+                    for _ in range(30):
+                        if stop_event.is_set():
+                            break
+                        pause_event.wait()
+                        if stop_event.wait(1):
+                            break
+                    continue
+
+                response.raise_for_status()
+                code = response.json().get("code")
+
+                if code == 0:
+                    events.put(("result", "VALID", username))
+                    try:
+                        import winsound
+                        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+                    except (ImportError, RuntimeError):
+                        pass
+                elif code == 1:
+                    events.put(("result", "TAKEN", username))
+                elif code == 2:
+                    events.put(("result", "CENSORED", username))
+                else:
+                    events.put(("error", None))
+
+            except requests.RequestException:
+                events.put(("error", None))
+            except ValueError:
                 events.put(("error", None))
 
-        except requests.RequestException:
-            events.put(("error", None))
-
-        except ValueError:
-            events.put(("error", None))
-
-
-        # Intervalo entre verificações
-        if txt_mode:
+            # Intervalo entre verificações; STOP interrompe a espera.
             if stop_event.wait(2.0):
                 break
-        else:
-            stop_event.wait(2.0)
 
-    events.put(("finished", None))
+    except Exception as exc:
+        events.put(("worker_error", str(exc)))
+    finally:
+        session.close()
+        events.put(("finished", stop_event.is_set()))
 
 
 # ================= CONTROLES =================
@@ -1188,8 +1186,16 @@ def update_dashboard():
                 text_color="#F0B94F"
             )
 
+        elif kind == "worker_error":
+
+            footer_status.configure(
+                text=f"Worker error: {event[1]}",
+                text_color=RED
+            )
+
         elif kind == "finished":
 
+            was_stopped = event[1] if len(event) > 1 else False
             running = False
             paused = False
 
@@ -1207,7 +1213,12 @@ def update_dashboard():
 
             target_label.configure(text="Idle")
 
-            if txt_usernames:
+            if txt_usernames and was_stopped:
+                footer_status.configure(
+                    text="TXT check stopped",
+                    text_color=MUTED
+                )
+            elif txt_usernames:
                 footer_status.configure(
                     text="TXT check finished",
                     text_color=GREEN
