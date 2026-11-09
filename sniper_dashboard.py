@@ -1,6 +1,7 @@
 import sys
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import filedialog
 from PIL import Image, ImageDraw, ImageFilter, ImageTk
 import requests
 import random
@@ -46,6 +47,10 @@ started_at = None
 
 validos = []
 validos_set = set()
+
+# Usernames carregados de um arquivo TXT (quando houver, serão testados em sequência)
+txt_usernames = []
+txt_file_name = None
 
 if os.path.exists(VALID_FILE):
     with open(VALID_FILE, "r", encoding="utf-8") as f:
@@ -269,6 +274,109 @@ ctk.CTkLabel(
     text_color=MUTED,
     font=("Segoe UI", 12)
 ).pack(side="left", padx=5)
+
+txt_status_label = ctk.CTkLabel(
+    setting_inner,
+    text="",
+    text_color=GREEN,
+    font=("Segoe UI", 11, "bold")
+)
+txt_status_label.pack(side="left", padx=(12, 5))
+
+def load_txt_file():
+    global txt_usernames, txt_file_name
+
+    if running:
+        footer_status.configure(
+            text="Stop the current search before loading a TXT file",
+            text_color="#F0B94F"
+        )
+        return
+
+    file_path = filedialog.askopenfilename(
+        title="Select a TXT file with Roblox usernames",
+        filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+    )
+
+    if not file_path:
+        return
+
+    try:
+        names = []
+        seen = set()
+
+        with open(file_path, "r", encoding="utf-8-sig") as file:
+            for line in file:
+                name = line.strip()
+
+                if name and name not in seen:
+                    names.append(name)
+                    seen.add(name)
+
+        if not names:
+            footer_status.configure(
+                text="The selected TXT file is empty",
+                text_color=RED
+            )
+            return
+
+        txt_usernames = names
+        txt_file_name = os.path.basename(file_path)
+
+        txt_status_label.configure(
+            text=f"TXT: {len(txt_usernames)} names loaded"
+        )
+        start_button.configure(text="▶   START TXT CHECK")
+
+        footer_status.configure(
+            text=f"Loaded {len(txt_usernames)} usernames from {txt_file_name}",
+            text_color=GREEN
+        )
+
+    except (OSError, UnicodeError) as error:
+        footer_status.configure(
+            text=f"Could not read TXT file: {error}",
+            text_color=RED
+        )
+
+def use_random_mode():
+    global txt_usernames, txt_file_name
+
+    if running:
+        return
+
+    txt_usernames = []
+    txt_file_name = None
+    txt_status_label.configure(text="")
+    start_button.configure(text="▶   START SEARCH")
+    footer_status.configure(
+        text="Random username mode selected",
+        text_color=MUTED
+    )
+
+ctk.CTkButton(
+    setting_inner,
+    text="LOAD .TXT",
+    width=110,
+    height=36,
+    fg_color="#241015",
+    hover_color="#8B1025",
+    border_width=1,
+    border_color="#B51B32",
+    command=load_txt_file
+).pack(side="right", padx=(8, 0))
+
+ctk.CTkButton(
+    setting_inner,
+    text="RANDOM MODE",
+    width=115,
+    height=36,
+    fg_color="#191719",
+    border_width=1,
+    border_color="#51474B",
+    hover_color="#30262A",
+    command=use_random_mode
+).pack(side="right", padx=(8, 0))
 
 
 # ================= PAINÉIS =================
@@ -772,7 +880,12 @@ def search_worker(length):
         if stop_event.is_set():
             break
 
-        username = generate_username(length)
+        if txt_mode:
+            username = next(username_iterator, None)
+            if username is None:
+                break
+        else:
+            username = generate_username(length)
 
         events.put(("target", username))
 
@@ -827,7 +940,11 @@ def search_worker(length):
 
 
         # Intervalo entre verificações
-        stop_event.wait(2.0)
+        if txt_mode:
+            if stop_event.wait(2.0):
+                break
+        else:
+            stop_event.wait(2.0)
 
     events.put(("finished", None))
 
@@ -844,6 +961,7 @@ def start_search():
         return
 
     length = int(length_var.get())
+    usernames_to_check = list(txt_usernames) if txt_usernames else None
 
     running = True
     paused = False
@@ -874,7 +992,7 @@ def start_search():
 
     threading.Thread(
         target=search_worker,
-        args=(length,),
+        args=(length, usernames_to_check),
         daemon=True
     ).start()
 
@@ -1089,10 +1207,16 @@ def update_dashboard():
 
             target_label.configure(text="Idle")
 
-            footer_status.configure(
-                text="Search stopped",
-                text_color=MUTED
-            )
+            if txt_usernames:
+                footer_status.configure(
+                    text="TXT check finished",
+                    text_color=GREEN
+                )
+            else:
+                footer_status.configure(
+                    text="Search stopped",
+                    text_color=MUTED
+                )
 
     available_label.configure(text=str(len(validos)))
     taken_label.configure(text=str(taken))
